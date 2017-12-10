@@ -5,8 +5,10 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.Rect;
 import android.support.annotation.Nullable;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.View;
 
@@ -23,6 +25,16 @@ public class PolygonView extends View {
     //**************** 测试相关 ****************
     private boolean isDebug = false;
     private int[] TEST_SCORE_VALUE_ARR = new int[]{60, 80, 20, 40};
+    private String[] DEFAULT_CATEGORY_TEXT_ARR = new String[]{
+            "综合",
+            "财运",
+            "工作",
+            "爱情"};
+    private int[] DEFAULT_SCORE_VALUE_COLOR_ARR = (new int[]{
+            Color.parseColor("#8943C9"),
+            Color.parseColor("#DBA700"),
+            Color.parseColor("#2EC9FF"),
+            Color.parseColor("#FF6A91")});
 
     //**************** View相关 ****************
     //View的宽
@@ -45,6 +57,12 @@ public class PolygonView extends View {
     private int PolygonLayerCount = 5;
     //着重点的半径
     private float focalPointCircleRadius = dp2px(2.5f);
+    //多边形每个顶点旁边的的文字，例如爱情，事业
+    private String[] categoryTextArr;
+    //种类上分值对应的颜色值（例如：爱情 98%中的98%）
+    private int[] scoreValueColorArr;
+    //文字与多边形顶点之间的距离
+    private final float textMargin = dp2px(5f);
 
     //**************** 绘制相关 ****************
     //坐标轴的画笔
@@ -55,6 +73,10 @@ public class PolygonView extends View {
     private Paint areaPaint;
     //着重点原点画笔
     private Paint focalPointPaint;
+    //种类文字的画笔
+    private Paint textPaint;
+    //种类文字颜色
+    private int textColor = Color.parseColor("#5F5F5F");
 
     //**************** 配置相关 ****************
     //默认分数数组
@@ -64,8 +86,10 @@ public class PolygonView extends View {
     //分数最大值
     private int maxValue = 100;
     //每个层级多边形按最大值分数值层，例如最大值是100，一共5层多边形
-    // 则100 / 5，每层的数值是20进制的，第一层是20，第二层是40，以此类推，一直到100
+    //则100 / 5，每层的数值是20进制的，第一层是20，第二层是40，以此类推，一直到100
     private float rate = maxValue * 1.0f / PolygonLayerCount;
+    //种类和分值文字之间的距离
+    private float categoryScoreTextMargin = dp2px(5f);
 
     public PolygonView(Context context) {
         super(context);
@@ -86,9 +110,9 @@ public class PolygonView extends View {
      * 初始化
      */
     private void init() {
-        if (isDebug) {
-            setScoreValueArr(TEST_SCORE_VALUE_ARR);
-        }
+//        setDebug(true);
+        //设置默认种类文字\种类分值文字的颜色\
+        config(DEFAULT_CATEGORY_TEXT_ARR, TEST_SCORE_VALUE_ARR, DEFAULT_SCORE_VALUE_COLOR_ARR);
         //初始化画笔
         initPaint();
     }
@@ -121,6 +145,11 @@ public class PolygonView extends View {
         focalPointPaint.setAntiAlias(true);
         focalPointPaint.setColor(Color.parseColor("#EDC577"));
         focalPointPaint.setStyle(Paint.Style.FILL);
+        //多边形顶点旁边的种类文字画笔
+        textPaint = new Paint();
+        textPaint.setTextSize(sp2px(13));
+        textPaint.setColor(textColor);
+        textPaint.setAntiAlias(true);
     }
 
     @Override
@@ -147,6 +176,8 @@ public class PolygonView extends View {
         drawCatercornerLine(canvas);
         //画区域和着重点（按分数在轴上画点，连线，填充颜色）
         drawAreaAndFocalPointCircle(canvas);
+        //画多边形每个顶点旁边的种类文字
+        drawText(canvas);
     }
 
     /**
@@ -224,6 +255,21 @@ public class PolygonView extends View {
             y = (float) (Math.sin(i * centerAngle) * r);
             path.lineTo(x, y);
             canvas.drawPath(path, borderPaint);
+            //测试，画第一条起点直线
+            if (isDebug) {
+                if (i == 1) {
+                    //画第一条起点直线（绿色直线）
+                    Paint paint = new Paint();
+                    paint.setStrokeWidth(8f);
+                    paint.setColor(Color.parseColor("#00FF00"));
+                    canvas.drawLine(0, 0, x, y, paint);
+                    //画第一个起点（蓝色点）
+                    Paint p = new Paint();
+                    p.setStrokeWidth(15f);
+                    p.setColor(Color.parseColor("#0000FF"));
+                    canvas.drawPoint(x, y, p);
+                }
+            }
         }
     }
 
@@ -259,25 +305,141 @@ public class PolygonView extends View {
         canvas.drawPath(path, areaPaint);
     }
 
+    /**
+     * 画文字，画文字的流程：先测量出总文字占用的位置，使用drawText方法，start和end设置画部分文字的角标
+     * 分2次画，先画种类文字，再切换颜色，画分数
+     */
+    private void drawText(Canvas canvas) {
+        //最外层的多边形的半径
+        float r = PolygonLayerCount * radius;
+        //最外层多边形的顶点x坐标
+        float x;
+        //最外层多边形的顶点y坐标
+        float y;
+
+        Log.d("test ::: ", "width / 2 = " + mWidth / 2);
+        Log.d("test ::: ", "height / 2 = " + mHeight / 2);
+        Log.d("test ::: ", "图形宽度 = " + r);
+        Log.d("test ::: ", "图形半宽度 = " + (mWidth - r));
+        Log.d("test ::: ", "--------- ** --------");
+
+        for (int i = 1; i <= num; i++) {
+            //测量文字的宽高所用的区域的Rect对象
+            Rect sumTextRect = new Rect();
+            //分数种类文字，例如："爱情 98%"
+            String sumStr = categoryTextArr[i - 1] + scoreValueArr[i - 1] + "%";
+            //先测量出总文字的区域，再量分数文字的区域，最后画2次，组成总文字
+            textPaint.getTextBounds(sumStr, 0, sumStr.length(), sumTextRect);
+            //总文字长度
+            float sumTextWidth = sumTextRect.width();
+            //总文字宽度
+            float sumTextHeight = sumTextRect.height();
+
+            //测量分数文字和"%"所用区域的Rect对象
+            Rect scoreRect = new Rect();
+            //分数文字，例如"98%"
+            String scoreStr = scoreValueArr[i - 1] + "%";
+            //量分数文字的区域
+            textPaint.getTextBounds(scoreStr, 0, scoreStr.length(), scoreRect);
+            //分数加%的宽度
+            float scoreTextWidth = scoreRect.width();
+            //计算出多边形的每个顶点的坐标
+            x = (float) (Math.cos(i * centerAngle) * r);
+            y = (float) (Math.sin(i * centerAngle) * r);
+            //文字的x坐标
+            float textX = 0;
+            //文字的y坐标
+            float textY = 0;
+
+            //先设置文字坐标为最外层的多边形的顶点的坐标，后面再做偏移，此时的文字的左下角都是贴着顶点的
+            textX = x + textX;
+            textY = y + textY;
+
+            Log.d("test ::: ", "testX ::: " + textX);
+            Log.d("test ::: ", "testY ::: " + textY);
+            Log.d("test ::: ", "--------- ** --------");
+
+            //如果y==0，并且x<0，则偏移一个总长度的位置
+            if (y == r && x <= 0) {
+                textX -= sumTextWidth / 2;
+                textY += sumTextHeight;
+            } else if (y == -r && x >= 0) {
+                textX -= sumTextWidth / 2;
+                textY -= sumTextHeight / 2;
+            } else if (y <= 0 && x == -r) {
+                textX -= sumTextWidth + textMargin;
+                textY += sumTextHeight / 3;
+            } else if (y >= 0 && x == r) {
+                textX += textMargin;
+                textY += sumTextHeight / 3;
+            }
+
+            //总文字减去分数文字，就是种类文字的长度最后一个字的角标
+            int index = sumStr.length() - scoreStr.length();
+            //画种类，先用黑色画种类
+            canvas.drawText(categoryTextArr[i - 1], 0, index, textX, textY, textPaint);
+            //设置对应种类的分数的颜色
+            textPaint.setColor(scoreValueColorArr[i - 1]);
+            //画分数，加3dp作为间隔,textX + scoreTextWidth的意思是起点移动到分数文字第一个字，LastY就是总文字的长度最后的位置
+            canvas.drawText(scoreStr, 0, scoreStr.length(), textX + scoreTextWidth + categoryScoreTextMargin, textY, textPaint);
+            //设置回种类文字的黑色颜色
+            textPaint.setColor(textColor);
+        }
+    }
+
+    /**
+     * 设置测试模式
+     *
+     * @param debug true为是测试模式，false为不是
+     */
     public void setDebug(boolean debug) {
         isDebug = debug;
     }
 
+    /**
+     * 当前是否是测试模式
+     *
+     * @return true为是测试模式，false为不是
+     */
     public boolean isDebug() {
         return isDebug;
     }
 
     /**
+     * 设置种类文字数组
+     *
+     * @param categoryTextArr 种类文字数组
+     */
+    public void setCategoryTextArr(String[] categoryTextArr) {
+        this.categoryTextArr = categoryTextArr;
+        postInvalidate();
+    }
+
+    /**
+     * 设置分值文字的颜色数组
+     *
+     * @param scoreValueColorArr 分值文字颜色数组
+     */
+    public void setScoreValueColorArr(int[] scoreValueColorArr) {
+        this.scoreValueColorArr = scoreValueColorArr;
+        postInvalidate();
+    }
+
+    /**
      * 设置数值数组
      *
-     * @param scoreValueArr 数值数组
+     * @param categoryTextArr    种类文字数组
+     * @param scoreValueArr      种类数值数组
+     * @param scoreValueColorArr 种类分值对应的颜色数组
      */
-    public void setScoreValueArr(int[] scoreValueArr) {
+    public void config(String[] categoryTextArr, int[] scoreValueArr, int[] scoreValueColorArr) {
+        this.categoryTextArr = categoryTextArr;
         this.scoreValueArr = scoreValueArr;
+        this.scoreValueColorArr = scoreValueColorArr;
         //按传入的分值数组设定多边形边数
         this.num = scoreValueArr.length;
         //重新设置多边形中心角的角度
-        centerAngle = (float) (piDouble / num);
+        this.centerAngle = (float) (piDouble / num);
         //通知重绘
         postInvalidate();
     }
