@@ -22,6 +22,7 @@ import android.view.View;
 public class PolygonView extends View {
     //**************** 测试相关 ****************
     private boolean isDebug = false;
+    private int[] TEST_SCORE_VALUE_ARR = new int[]{60, 80, 20, 40};
 
     //**************** View相关 ****************
     //View的宽
@@ -39,9 +40,11 @@ public class PolygonView extends View {
     //Math类的sin和cos需要传入的角度值是弧度制，所以这里的中心角的角度，也是弧度制的弧度
     private float centerAngle = (float) (piDouble / num);
     //最小的多边形的半径
-    private int radius = dp2px(20);
+    private int radius = (int) dp2px(20);
     //多边形层数
     private int PolygonLayerCount = 5;
+    //着重点的半径
+    private float focalPointCircleRadius = dp2px(2.5f);
 
     //**************** 绘制相关 ****************
     //坐标轴的画笔
@@ -50,6 +53,8 @@ public class PolygonView extends View {
     private Paint borderPaint;
     //每个数值在中心线上的点连接画的区域的画笔
     private Paint areaPaint;
+    //着重点原点画笔
+    private Paint focalPointPaint;
 
     //**************** 配置相关 ****************
     //默认分数数组
@@ -81,6 +86,9 @@ public class PolygonView extends View {
      * 初始化
      */
     private void init() {
+        if (isDebug) {
+            setScoreValueArr(TEST_SCORE_VALUE_ARR);
+        }
         //初始化画笔
         initPaint();
     }
@@ -108,6 +116,11 @@ public class PolygonView extends View {
         areaPaint.setColor(Color.parseColor("#B7F5E1B5"));
         //设置画笔风格为填充，将区域的图形填充颜色
         areaPaint.setStyle(Paint.Style.FILL);
+        //数值坐标点画圆的着重点画笔
+        focalPointPaint = new Paint();
+        focalPointPaint.setAntiAlias(true);
+        focalPointPaint.setColor(Color.parseColor("#EDC577"));
+        focalPointPaint.setStyle(Paint.Style.FILL);
     }
 
     @Override
@@ -123,7 +136,7 @@ public class PolygonView extends View {
         super.onDraw(canvas);
         //将坐标轴移到View的中心点
         canvas.translate(mWidth / 2, mHeight / 2);
-        //测试模式下，画坐标轴
+        //测试模式下，画坐标轴和外接圆
         if (isDebug) {
             drawCoordinateAxis(canvas, coordinateAxisPaint);
             drawCircumCircle(canvas, coordinateAxisPaint);
@@ -132,8 +145,29 @@ public class PolygonView extends View {
         drawPolygon(canvas);
         //画每个多边形的对角线
         drawCatercornerLine(canvas);
-        //画区域（按分数在轴上画点，连线，填充颜色）
-        drawArea(canvas);
+        //画区域和着重点（按分数在轴上画点，连线，填充颜色）
+        drawAreaAndFocalPointCircle(canvas);
+    }
+
+    /**
+     * 画坐标轴
+     */
+    private void drawCoordinateAxis(Canvas canvas, Paint paint) {
+        float halfWidth = mWidth / 2f;
+        float halfHeight = mHeight / 2f;
+        //画横坐标
+        canvas.drawLine(-halfWidth, 0, halfWidth, 0, paint);
+        //画纵坐标
+        canvas.drawLine(0, -halfHeight, 0, halfHeight, paint);
+    }
+
+    /**
+     * 画外接圆
+     */
+    private void drawCircumCircle(Canvas canvas, Paint paint) {
+        //拿最外层的四边形的半径，画一个圆
+        float r = PolygonLayerCount * radius;
+        canvas.drawCircle(0, 0, r, paint);
     }
 
     /**
@@ -170,35 +204,6 @@ public class PolygonView extends View {
         }
     }
 
-    /**
-     * 画坐标轴
-     */
-    private void drawCoordinateAxis(Canvas canvas, Paint paint) {
-        float halfWidth = mWidth / 2f;
-        float halfHeight = mHeight / 2f;
-        //画横坐标
-        canvas.drawLine(-halfWidth, 0, halfWidth, 0, paint);
-        //画纵坐标
-        canvas.drawLine(0, -halfHeight, 0, halfHeight, paint);
-    }
-
-    /**
-     * 画外接圆
-     */
-    private void drawCircumCircle(Canvas canvas, Paint paint) {
-        float x;
-        float y;
-        Path path = new Path();
-        float r = PolygonLayerCount * radius;
-        for (int i = 1; i <= PolygonLayerCount; i++) {
-            path.reset();
-            x = (float) (Math.cos(i * centerAngle) * r);
-            y = (float) (Math.sin(i * centerAngle) * r);
-            path.lineTo(x, y);
-            canvas.drawCircle(0, 0, r, paint);
-        }
-    }
-
 
     /**
      * 画每个多边形的对角线
@@ -223,9 +228,9 @@ public class PolygonView extends View {
     }
 
     /**
-     * 画区域（按分数在轴上画点，连线，填充颜色）
+     * 画区域和着重点（按分数在轴上画点，连线，填充颜色）
      */
-    private void drawArea(Canvas canvas) {
+    private void drawAreaAndFocalPointCircle(Canvas canvas) {
         //画区域，其实就是给每个点连线，其实也是一个四边形
         Path path = new Path();
         //区域每个点的x坐标
@@ -243,6 +248,10 @@ public class PolygonView extends View {
                 path.moveTo(x, y);
             } else {//后续将每个点连接
                 path.lineTo(x, y);
+            }
+            //每个坐标点都画上一个着重色的圆点
+            if (x != 0 && y != 0) {
+                canvas.drawCircle(x, y, focalPointCircleRadius, focalPointPaint);
             }
         }
         //封闭图形，由于Paint
@@ -265,6 +274,12 @@ public class PolygonView extends View {
      */
     public void setScoreValueArr(int[] scoreValueArr) {
         this.scoreValueArr = scoreValueArr;
+        //按传入的分值数组设定多边形边数
+        this.num = scoreValueArr.length;
+        //重新设置多边形中心角的角度
+        centerAngle = (float) (piDouble / num);
+        //通知重绘
+        postInvalidate();
     }
 
     /**
@@ -272,7 +287,7 @@ public class PolygonView extends View {
      *
      * @param dpVal
      */
-    protected int dp2px(int dpVal) {
+    protected float dp2px(float dpVal) {
         return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP,
                 dpVal, getResources().getDisplayMetrics());
     }
@@ -283,7 +298,7 @@ public class PolygonView extends View {
      * @param spVal
      * @return
      */
-    protected int sp2px(int spVal) {
+    protected float sp2px(float spVal) {
         return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP,
                 spVal, getResources().getDisplayMetrics());
     }

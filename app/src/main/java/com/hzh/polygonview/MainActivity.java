@@ -7,7 +7,7 @@ import com.hzh.polygonview.widget.PolygonView;
 
 public class MainActivity extends AppCompatActivity {
     //分值数组
-    private int[] scoreValueArr = new int[]{60, 80, 20, 40};
+    private int[] scoreValueArr = new int[]{60, 80, 20, 40};//,40
 
     private PolygonView polygonView;
 
@@ -26,6 +26,5 @@ public class MainActivity extends AppCompatActivity {
 
     private void onBindContent() {
         polygonView.setScoreValueArr(scoreValueArr);
-        polygonView.invalidate();
     }
 }
